@@ -31,14 +31,14 @@ func init() {
 
 var window *glfw.Window
 var horizontalAngle = 0.0
-var verticalAngle = -3.14 / 2
+var verticalAngle = 0.0
 var initialFoV float32 = 45.0
 var speed = 3.0
-var mouseSpeed = 5.0
+var mouseSpeed = 0.005
 var scrollSpeed = 2.0
 var lastTime float64
 
-var position = mgl32.Vec3{0, 15, 0}
+var position = mgl32.Vec3{0, 0, -15}
 var projection = mgl32.Perspective(mgl32.DegToRad(initialFoV), float32(windowWidth)/float32(windowHeight), 0.1, 100)
 var camera = mgl32.LookAt(0, 0, 0, 0, 0, 0, 0, 1, 0)
 var models = make([]mgl32.Mat4, 0)
@@ -99,45 +99,6 @@ func main() {
 	cameraUniform := gl.GetUniformLocation(program, gl.Str("camera\x00"))
 	modelUniform := gl.GetUniformLocation(program, gl.Str("model\x00"))
 
-	var cubeVerticies = []float32{
-		-1.0, -1.0, -1.0, 0.000059, 0.000004,
-		-1.0, -1.0, 1.0, 0.000103, 0.336048,
-		-1.0, 1.0, 1.0, 0.335973, 0.335903,
-		1.0, 1.0, -1.0, 1.000023, 0.000013,
-		-1.0, -1.0, -1.0, 0.667979, 0.335851,
-		-1.0, 1.0, -1.0, 0.999958, 0.336064,
-		1.0, -1.0, 1.0, 0.667979, 0.335851,
-		-1.0, -1.0, -1.0, 0.336024, 0.671877,
-		1.0, -1.0, -1.0, 0.667969, 0.671889,
-		1.0, 1.0, -1.0, 1.000023, 0.000013,
-		1.0, -1.0, -1.0, 0.668104, 0.000013,
-		-1.0, -1.0, -1.0, 0.667979, 0.335851,
-		-1.0, -1.0, -1.0, 0.000059, 0.000004,
-		-1.0, 1.0, 1.0, 0.335973, 0.335903,
-		-1.0, 1.0, -1.0, 0.336098, 0.000071,
-		1.0, -1.0, 1.0, 0.667979, 0.335851,
-		-1.0, -1.0, 1.0, 0.335973, 0.335903,
-		-1.0, -1.0, -1.0, 0.336024, 0.671877,
-		-1.0, 1.0, 1.0, 1.000004, 0.671847,
-		-1.0, -1.0, 1.0, 0.999958, 0.336064,
-		1.0, -1.0, 1.0, 0.667979, 0.335851,
-		1.0, 1.0, 1.0, 0.668104, 0.000013,
-		1.0, -1.0, -1.0, 0.335973, 0.335903,
-		1.0, 1.0, -1.0, 0.667979, 0.335851,
-		1.0, -1.0, -1.0, 0.335973, 0.335903,
-		1.0, 1.0, 1.0, 0.668104, 0.000013,
-		1.0, -1.0, 1.0, 0.336098, 0.000071,
-		1.0, 1.0, 1.0, 0.000103, 0.336048,
-		1.0, 1.0, -1.0, 0.000004, 0.671870,
-		-1.0, 1.0, -1.0, 0.336024, 0.671877,
-		1.0, 1.0, 1.0, 0.000103, 0.336048,
-		-1.0, 1.0, -1.0, 0.336024, 0.671877,
-		-1.0, 1.0, 1.0, 0.335973, 0.335903,
-		1.0, 1.0, 1.0, 0.667969, 0.671889,
-		-1.0, 1.0, 1.0, 1.000004, 0.671847,
-		1.0, -1.0, 1.0, 0.667979, 0.335851,
-	}
-
 	var vbo uint32
 	gl.GenBuffers(1, &vbo)
 	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
@@ -160,6 +121,7 @@ func main() {
 	window.SetScrollCallback(scrollFunction)
 	window.SetCursorPos(float64(windowWidth)/2, float64(windowHeight)/2)
 
+	models = append(models, mgl32.Translate3D(0, 0, 0))
 	models = append(models, mgl32.Translate3D(3.53, 0, 3.53))
 	models = append(models, mgl32.Translate3D(-3.53, 0, 3.53))
 	models = append(models, mgl32.Translate3D(3.53, 0, -3.53))
@@ -173,19 +135,24 @@ func main() {
 	for !window.ShouldClose() && window.GetKey(glfw.KeyEscape) != glfw.Press {
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-		currentTime := glfw.GetTime()
-		deltaTime := currentTime - lastTime
-		horizontalAngle += mouseSpeed * deltaTime / 5
+		// currentTime := glfw.GetTime()
+		// deltaTime := currentTime - lastTime
+		// horizontalAngle += mouseSpeed * deltaTime / 5
 		// verticalAngle += mouseSpeed * deltaTime / 10
 		computeMatricesFromInputs()
 
 		gl.UseProgram(program)
-		gl.UniformMatrix4fv(projectionUniform, 1, false, &projection[0])
-		gl.UniformMatrix4fv(cameraUniform, 1, false, &camera[0])
 		gl.ActiveTexture(gl.TEXTURE0)
 		gl.BindTexture(gl.TEXTURE_2D, texture)
 
-		for _, model := range models {
+		gl.UniformMatrix4fv(projectionUniform, 1, false, &projection[0])
+		gl.UniformMatrix4fv(cameraUniform, 1, false, &camera[0])
+
+		gl.UniformMatrix4fv(modelUniform, 1, false, &models[0][0])
+		gl.DrawArrays(gl.TRIANGLES, 0, 6*2*3)
+
+		for i := 1; i < len(models); i++ {
+			model := models[i]
 			gl.UniformMatrix4fv(modelUniform, 1, false, &model[0])
 			gl.DrawArrays(gl.TRIANGLES, 0, 6*2*3)
 		}
@@ -198,6 +165,51 @@ func main() {
 	gl.DeleteBuffers(1, &vbo)
 	gl.DeleteVertexArrays(1, &vao)
 	gl.DeleteProgram(program)
+}
+
+var cubeVerticies = []float32{
+	//1
+	1, 1, 1, 0.0, 0.0,
+	1, 1, -1, 0.0, 0.335973,
+	-1, 1, -1, 0.335973, 0.335973,
+	1, 1, 1, 0.0, 0.0,
+	-1, 1, -1, 0.335973, 0.335973,
+	-1, 1, 1, 0.335973, 0.0,
+	//2
+	1, 1, -1, 0.335973, 0.0, // Top Left
+	1, -1, -1, 0.335973, 0.335973, // Bottom Left
+	-1, -1, -1, 0.668104, 0.335973, // Bottom Right
+	1, 1, -1, 0.335973, 0.0, // Top Left
+	-1, -1, -1, 0.668104, 0.335973, // Bottom Right
+	-1, 1, -1, 0.668104, 0.0, // Top Right
+	//3
+	1, 1, 1, 0.668104, 0.0, // Top Left
+	1, -1, -1, 1, 0.335973, // Bottom Right
+	1, 1, -1, 1.0, 0.0, // Top Right
+	1, -1, -1, 1.0, 0.335973, // Bottom Right
+	1, 1, 1, 0.668104, 0.0, // Top Left
+	1, -1, 1, 0.668104, 0.335973, // Bottom Left
+	//4
+	-1, -1, -1, 0.0, 0.335973,
+	-1, -1, 1, 0.0, 0.668104,
+	-1, 1, 1, 0.335973, 0.668104,
+	-1, -1, -1, 0.0, 0.336048,
+	-1, 1, 1, 0.335973, 0.668104,
+	-1, 1, -1, 0.335973, 0.335903,
+	//5
+	-1, 1, 1, 0.335973, 0.335973, // Top Left
+	-1, -1, 1, 0.335973, 0.668104, // Bottom Left
+	1, -1, 1, 0.668104, 0.668104, // Bottom Right
+	1, 1, 1, 0.668104, 0.335973, // Top Right
+	-1, 1, 1, 0.335973, 0.335973, // Top Left
+	1, -1, 1, 0.668104, 0.668104, // Bottom Right
+	//6
+	1, -1, 1, 0.668104, 0.668104, // Bottom Left
+	-1, -1, -1, 1.0, 0.335973, // Top Right
+	1, -1, -1, 0.668104, 0.335973, // Top Left
+	1, -1, 1, 0.668104, 0.668104, // Bottom Left
+	-1, -1, 1, 1.0, 0.668104, // Bottom Right
+	-1, -1, -1, 1, 0.335973, // Top Right
 }
 
 var vertexShader = `
@@ -338,42 +350,51 @@ func computeMatricesFromInputs() {
 	currentTime := glfw.GetTime()
 	deltaTime := currentTime - lastTime
 	xpos, ypos := window.GetCursorPos()
-
 	window.SetCursorPos(float64(windowWidth)/2, float64(windowHeight)/2)
 
-	horizontalAngle += mouseSpeed * deltaTime * (float64(windowWidth)/2 - xpos)
-	verticalAngle += mouseSpeed * deltaTime * (float64(windowHeight)/2 - ypos)
+	horizontalAngle += mouseSpeed * (float64(windowWidth/2) - xpos)
+	verticalAngle += mouseSpeed * (float64(windowHeight/2) - ypos)
 
-	var direction = mgl32.Vec3{float32(math.Cos(verticalAngle) * math.Sin(horizontalAngle)), float32(math.Sin(verticalAngle)), float32(math.Cos(verticalAngle) * math.Cos(horizontalAngle))}
-	var right = mgl32.Vec3{float32(math.Sin(horizontalAngle - 3.14/2.0)), 0, float32(math.Cos(horizontalAngle - 3.14/2.0))}
+	var direction = mgl32.Vec3{
+		float32(math.Cos(verticalAngle) * math.Sin(horizontalAngle)),
+		float32(math.Sin(verticalAngle)),
+		float32(math.Cos(verticalAngle) * math.Cos(horizontalAngle)),
+	}
+	var right = mgl32.Vec3{
+		float32(math.Sin(horizontalAngle - 3.14/2.0)),
+		0,
+		float32(math.Cos(horizontalAngle - 3.14/2.0)),
+	}
 	var up = right.Cross(direction)
 
 	if horizontalAngle != lastHorizontalAngle || verticalAngle != lastVerticalAngle {
 		log.Printf("Angles: %f, %f\n", horizontalAngle, verticalAngle)
 		lastVerticalAngle = verticalAngle
 		lastHorizontalAngle = horizontalAngle
-		log.Printf("Direction: %+v\n", direction)
+		// log.Printf("Direction: %+v\n", direction)
 	}
 
 	// Forward
-	if window.GetKey(glfw.KeyUp) == glfw.Press {
+	if window.GetKey(glfw.KeyUp) == glfw.Press || window.GetKey(glfw.KeyW) == glfw.Press {
 		position = position.Add(direction.Mul(float32(deltaTime)).Mul(float32(speed)))
 	}
 
 	// Backward
-	if window.GetKey(glfw.KeyDown) == glfw.Press {
+	if window.GetKey(glfw.KeyDown) == glfw.Press || window.GetKey(glfw.KeyS) == glfw.Press {
 		position = position.Sub(direction.Mul(float32(deltaTime)).Mul(float32(speed)))
 	}
 
 	// Strafe Left
-	if window.GetKey(glfw.KeyLeft) == glfw.Press {
+	if window.GetKey(glfw.KeyLeft) == glfw.Press || window.GetKey(glfw.KeyA) == glfw.Press {
 		position = position.Sub(right.Mul(float32(deltaTime)).Mul(float32(speed)))
 	}
 
 	// Strafe Right
-	if window.GetKey(glfw.KeyRight) == glfw.Press {
+	if window.GetKey(glfw.KeyRight) == glfw.Press || window.GetKey(glfw.KeyD) == glfw.Press {
 		position = position.Add(right.Mul(float32(deltaTime)).Mul(float32(speed)))
 	}
+
+	log.Printf("Position: %+v\n", position)
 
 	// log.Printf("Position: %+v\n", position)
 	// log.Printf("Look At: %+v\n", position.Add(direction))
