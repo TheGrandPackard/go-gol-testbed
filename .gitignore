@@ -1,3 +1,4 @@
 *.exe
 *.s3d
 *.txt
+s3d_loader/output/*

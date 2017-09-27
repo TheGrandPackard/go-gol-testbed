@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sort"
 )
 
 var fileNameListCRC = 0x61580AC9
@@ -55,6 +56,12 @@ type PFSHeader struct {
 type DirectoryHeader struct {
 	Count uint32
 }
+
+type ByOffset []FileHeader
+
+func (a ByOffset) Len() int           { return len(a) }
+func (a ByOffset) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByOffset) Less(i, j int) bool { return a[i].Offset < a[j].Offset }
 
 type FileHeader struct {
 	CRC    uint32
@@ -120,7 +127,7 @@ func loadS3d(fileName string) error {
 	// fmt.Printf("File Count: %d\n", directoryHeader.Count)
 
 	// Get file crcs, offsets, and checksums
-	fileHeaders := make([]FileHeader, directoryHeader.Count)
+	fileHeaders := make([]FileHeader, 0)
 	fileNameHeader := FileHeader{}
 	for i := 0; i < int(directoryHeader.Count); i++ {
 		fileHeaderBytes := make([]byte, 12)
@@ -135,17 +142,21 @@ func loadS3d(fileName string) error {
 			return fmt.Errorf("binary.Read failed: %v", err)
 		}
 		// fmt.Printf("Parsed data: %+v\n", directoryHeader)
-		// fmt.Printf("File %d Found. CRC: %X Offset: %X Size: %X\n", i+1, fileHeader.CRC, fileHeader.Offset, fileHeader.Size)
 
 		if fileHeader.CRC == uint32(fileNameListCRC) {
 			fileNameHeader = fileHeader
+			// fmt.Printf("Directory Header Found. CRC: %X Offset: %X Size: %X\n", fileHeader.CRC, fileHeader.Offset, fileHeader.Size)
 		} else {
 			fileHeaders = append(fileHeaders, fileHeader)
+			// fmt.Printf("File Header Found. CRC: %X Offset: %X Size: %X\n", fileHeader.CRC, fileHeader.Offset, fileHeader.Size)
 		}
 	}
 
+	// Sort the offsets
+	sort.Sort(ByOffset(fileHeaders))
+
 	// Get file names
-	// fileNames := make([]string, directoryHeader.Count)
+	fileNames := make([]string, 0)
 	fileNameDataBlockBytes := make([]byte, 8)
 	fileNameDataBlock := DataBlock{}
 	_, err = file.ReadAt(fileNameDataBlockBytes, int64(fileNameHeader.Offset))
@@ -169,6 +180,7 @@ func loadS3d(fileName string) error {
 	if err != nil {
 		panic(err)
 	}
+	r.Close()
 
 	// File count
 	fileNameCountBytes := make([]byte, 4)
@@ -182,7 +194,7 @@ func loadS3d(fileName string) error {
 	if err != nil {
 		return fmt.Errorf("binary.Read failed: %v", err)
 	}
-	fmt.Printf("Found %d Files\n", fileNameCount.Count)
+	// fmt.Printf("Found %d Files\n", fileNameCount.Count)
 
 	for i := 0; i < int(fileNameCount.Count); i++ {
 		// File length
@@ -205,18 +217,45 @@ func loadS3d(fileName string) error {
 		if err != nil && err != io.EOF {
 			return fmt.Errorf("Error reading file name entry bytes: %v", err)
 		}
-		fmt.Printf("\t - %s\n", string(fileNameEntryBytes))
-	}
+		fileName := string(bytes.Trim(fileNameEntryBytes, "\x00"))
+		fileNames = append(fileNames, fileName)
+		fmt.Printf("%X\t%s\t%X\n", fileHeaders[i].Offset, fileNames[i], fileHeaders[i].Size)
 
-	// f, err := os.Create("filenames.txt")
-	// if err != nil {
-	// 	return fmt.Errorf("Error opening file to write: %v", err)
-	// }
-	// io.Copy(f, r)
-	// f.Close()
-	//
-	// io.Copy(os.Stdout, r)
-	r.Close()
+		// Extract file
+		fileDataBlockBytes := make([]byte, 8)
+		fileDataBlock := DataBlock{}
+		_, err = file.ReadAt(fileDataBlockBytes, int64(fileHeaders[i].Offset))
+		if err != nil {
+			return fmt.Errorf("Error reading data block bytes: %v", err)
+		}
+		buffer = bytes.NewBuffer(fileDataBlockBytes)
+		err = binary.Read(buffer, binary.LittleEndian, &fileDataBlock)
+		if err != nil {
+			return fmt.Errorf("binary.Read failed: %v", err)
+		}
+
+		fileBytes := make([]byte, fileDataBlock.CompressedLength)
+		_, err = file.ReadAt(fileBytes, int64(fileHeaders[i].Offset+8))
+		if err != nil {
+			return fmt.Errorf("Error reading file name bytes: %v", err)
+		}
+		buffer = bytes.NewBuffer(fileBytes)
+		r, err := zlib.NewReader(buffer)
+		if err != nil {
+			panic(err)
+		}
+
+		// TODO: Read multiple blocks (this only reads a single 8k block and writes it out)
+
+		os.Mkdir("output", 0755)
+		f, err := os.Create(fmt.Sprintf("output/%s", fileNames[i]))
+		if err != nil {
+			return fmt.Errorf("Error opening file to write: %v", err)
+		}
+		io.Copy(f, r)
+		f.Close()
+		r.Close()
+	}
 
 	return nil
 }
