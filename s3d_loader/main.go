@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strings"
 )
 
 var fileNameListCRC = 0x61580AC9
@@ -102,7 +103,6 @@ func loadS3d(fileName string) error {
 	if err != nil {
 		return fmt.Errorf("binary.Read failed: %v", err)
 	}
-	// fmt.Printf("Parsed data: %+v\n", header)
 	// fmt.Printf("Directory Header Offset: %X\n", header.Offset)
 
 	// Validate header
@@ -168,6 +168,7 @@ func loadS3d(fileName string) error {
 	if err != nil {
 		return fmt.Errorf("binary.Read failed: %v", err)
 	}
+	// TODO: Read more file name blocks if necessary
 	// fmt.Printf("Filename Header Block Found. Compressed Length: %X Inflated Length: %X\n", fileNameDataBlock.CompressedLength, fileNameDataBlock.InflatedLenth)
 
 	fileNameBytes := make([]byte, fileNameDataBlock.CompressedLength)
@@ -196,6 +197,9 @@ func loadS3d(fileName string) error {
 	}
 	// fmt.Printf("Found %d Files\n", fileNameCount.Count)
 
+	os.Mkdir("output", 0755)
+	fileNoExt := strings.Split(fileName, ".")[0]
+	os.Mkdir("output/"+fileNoExt, 0755)
 	for i := 0; i < int(fileNameCount.Count); i++ {
 		// File length
 		fileNameLengthBytes := make([]byte, 4)
@@ -222,39 +226,44 @@ func loadS3d(fileName string) error {
 		fmt.Printf("%X\t%s\t%X\n", fileHeaders[i].Offset, fileNames[i], fileHeaders[i].Size)
 
 		// Extract file
-		fileDataBlockBytes := make([]byte, 8)
-		fileDataBlock := DataBlock{}
-		_, err = file.ReadAt(fileDataBlockBytes, int64(fileHeaders[i].Offset))
-		if err != nil {
-			return fmt.Errorf("Error reading data block bytes: %v", err)
-		}
-		buffer = bytes.NewBuffer(fileDataBlockBytes)
-		err = binary.Read(buffer, binary.LittleEndian, &fileDataBlock)
-		if err != nil {
-			return fmt.Errorf("binary.Read failed: %v", err)
-		}
-
-		fileBytes := make([]byte, fileDataBlock.CompressedLength)
-		_, err = file.ReadAt(fileBytes, int64(fileHeaders[i].Offset+8))
-		if err != nil {
-			return fmt.Errorf("Error reading file name bytes: %v", err)
-		}
-		buffer = bytes.NewBuffer(fileBytes)
-		r, err := zlib.NewReader(buffer)
-		if err != nil {
-			panic(err)
-		}
-
-		// TODO: Read multiple blocks (this only reads a single 8k block and writes it out)
-
-		os.Mkdir("output", 0755)
-		f, err := os.Create(fmt.Sprintf("output/%s", fileNames[i]))
+		var inflated uint32
+		f, err := os.Create(fmt.Sprintf("output/%s/%s", fileNoExt, fileNames[i]))
 		if err != nil {
 			return fmt.Errorf("Error opening file to write: %v", err)
 		}
-		io.Copy(f, r)
+
+		// Read multiple blocks (this only reads a single 8k block and writes it out)
+		file.Seek(int64(fileHeaders[i].Offset), 0)
+		for inflated < fileHeaders[i].Size {
+			fileDataBlockBytes := make([]byte, 8)
+			fileDataBlock := DataBlock{}
+			_, err = file.Read(fileDataBlockBytes)
+			if err != nil {
+				return fmt.Errorf("Error reading data block bytes: %v", err)
+			}
+			buffer = bytes.NewBuffer(fileDataBlockBytes)
+			err = binary.Read(buffer, binary.LittleEndian, &fileDataBlock)
+			if err != nil {
+				return fmt.Errorf("binary.Read failed: %v", err)
+			}
+			// fmt.Printf("Data Block Compressed: %X Inflated: %X\n", fileDataBlock.CompressedLength, fileDataBlock.InflatedLenth)
+			fileBytes := make([]byte, fileDataBlock.CompressedLength)
+			_, err = file.Read(fileBytes)
+			if err != nil {
+				return fmt.Errorf("Error reading file name bytes: %v", err)
+			}
+			buffer = bytes.NewBuffer(fileBytes)
+			r2, err := zlib.NewReader(buffer)
+			if err != nil {
+				panic(err)
+			}
+			io.Copy(f, r2)
+			r2.Close()
+
+			inflated += fileDataBlock.InflatedLenth
+		}
+
 		f.Close()
-		r.Close()
 	}
 
 	return nil
